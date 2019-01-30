@@ -1,0 +1,140 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: meh
+
+Parameters:
+  VPCID:
+    Description: VPC in us-east-1
+    Type: 'AWS::EC2::VPC::Id'
+    Default: vpc-xxxxxxxxxxxxx
+  PublicSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: 'Public subnets for the ELB in us-east-1a and us-east-1b'
+    Default: "subnet-xxxxxxxxxxxxx,subnet-xxxxxxxxxxxxx"
+  PrivateSubnet1:
+    Description: Public Subnet in us-east-1c
+    Type: AWS::EC2::Subnet::Id
+    Default: subnet-xxxxxxxxxx
+  EBSEncryption:
+    Type: String
+    Default: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  SSHKeyName:
+    Description: EC2 ssh key
+    Type: String
+    Default: Key
+  EBSEncryption:
+    Type: String
+    Default: xxxxxxxxxxxxxxxxxxxxxxxxxxx
+  CertARN:
+    Type: String
+    Default: xxxxxxxxxxxxxxxxxxxxxxx
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Default: sg-xxxxxxxxxxxxxxxxxxxxx
+
+Resources:
+  EC2JAMFDP:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      ImageId: ami-xxxxxxxxxxxxxxxxx
+      InstanceType: t3.nano
+      KeyName: !Ref SSHKeyName
+      SecurityGroupIds: !Ref SecurityGroupIds
+      BlockDeviceMappings:
+        -
+          DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: gp2
+            DeleteOnTermination: true
+            VolumeSize: 60
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -ex
+            cp /usr/share/zoneinfo/America/Los_Angeles /etc/localtime;
+            y;
+#      Volumes:
+#        -
+#          Device: "/dev/sdf"
+#          VolumeId: !Ref U01Volume
+      Tags:
+        -
+          Key: Name
+          Value: xxxxxxxxxxxxxxxxxxxxx
+
+#  U01Volume:
+#    Type: AWS::EC2::Volume
+#    Properties:
+#      AvailabilityZone: us-east-1c
+#      Encrypted: true
+#      KmsKeyId: !Ref EBSEncryption
+#      Size: 55
+#      Tags:
+#        -
+#          Key: Name
+#          Value: xxxxxxxxxxx,/u01
+#      VolumeType: gp2
+
+  JAMFELBSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: JAMF-ELB-SG
+      VpcId:
+        Ref: VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: JAMF-ELB-SG
+  ElasticLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+#    DependsOn:
+#      - ec2instance01
+    Properties:
+      LoadBalancerName: JAMF-DP-ELB
+      SecurityGroups:
+        - Ref: JAMFELBSG
+      Subnets: !Ref PublicSubnets
+      Scheme: internet-facing
+      Instances:
+        - Ref: EC2JAMFDP
+      Listeners:
+        - LoadBalancerPort: '443'
+          InstancePort: '80'
+          InstanceProtocol: HTTP
+          Protocol: HTTPS
+          SSLCertificateId: !Ref CertARN
+#      AccessLoggingPolicy:
+#        EmitInterval: '60'
+#        Enabled: 'False'
+#        S3BucketName: elb-logs
+#        S3BucketPrefix: ELB
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: '2'
+        UnhealthyThreshold: '2'
+        Interval: '10'
+        Timeout: '5'
+      ConnectionDrainingPolicy:
+        Enabled: true
+        Timeout: '60'
+      Tags:
+        - Key: Name
+          Value: JAMF-DP-ELB
+Outputs:
+  ElbDNS:
+    Description: ELB DNS
+    Value:
+      'Fn::GetAtt':
+        - ElasticLoadBalancer
+        - DNSName
+  EC2JAMFDP:
+    Description: 'Ec2 instance EC2JAMFDP'
+    Value: !Ref EC2JAMFDP
+    Export:
+      Name: !Sub '${AWS::StackName}-EC2JAMFDP'
